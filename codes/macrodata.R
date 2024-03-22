@@ -1,359 +1,233 @@
 library(tidyverse)
-library(Haver)
 library(stringr)
 library(lubridate)
 library(rebus)
-library(fredr)
-library(forecast)
-library(seasonal)
-library(fredr)
+library(imfr)
 
-haver.path('auto')
-fredr_set_key("cda47ae66b38ed7988c0a9c2ec80c94f")
+#rm(list = ls())
+#dbs <- imfr::imf_databases() %>% 
+#  filter(!str_detect(database_id, one_or_more(DGT)))
 
+#params <- imfr::imf_parameters('bop')
+#vars <- params[['indicator']] %>% 
+#  as_tibble()
 
-meta <- bind_rows(
-  haver.metadata(database = 'EMERGE') %>% 
-    as.tibble(),
-  haver.metadata(database = 'G10') %>% 
-    as.tibble()
-)
+#PCPS
+#Primary Commodity Price System (PCPS)
 
+#PCTOT
+#Commodity Terms of Trade
 
-ip <- meta %>% 
-  filter(str_detect(code, START %R% or('x', 's', 'h') %R% '\\d\\d\\d' %R% 'd' %R% END  )) %>% 
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':', 'IP', 'Industrial'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all('I' %R% END) %>% 
-           str_remove_all('IP') %>% 
-           str_remove_all('Industrial') %>% 
-           str_remove_all(SPACE %R% END)) %>% 
-  filter(frequency == 'M') %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code)  %>% 
-  mutate(variable = 'Industrial Production',
-         varnam = 'ip') %>% 
-  distinct(code, .keep_all = T)
+#vars %>% 
+#  filter(str_detect(tolower(description), 'current')) %>% 
+#  print(n = 100)
 
 
-pi <- meta %>% 
-  filter(str_detect(code, START %R% or('x', 's', 'h') %R% '\\d\\d\\d' %R% 'pc' %R% END  )) %>% 
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all(SPACE %R% END)) %>%  
-  filter(frequency == 'M') %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code) %>% 
-  mutate(variable = 'CPI', 
-         varnam = 'pi') %>% 
-  distinct(code, .keep_all = T)
+#IFS - indicator
+'
+#Production
+NGDP_SA_XDC    Gross Domestic Product, Nominal, Seasonally Adjusted, Domestic Currency                              
+AIP_IX            Economic Activity, Industrial Production, Index 
 
 
-r <- meta %>% 
-  filter(str_detect(code, START %R% 'n' %R% '\\d\\d\\d' %R% or('ri3', 'rg3m') %R% END  )) %>%
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all(SPACE %R% END)) %>%  
-  filter(frequency == 'M') %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code) %>% 
-  mutate(variable = 'Interest rate',
-         varnam = 'r') %>% 
-  distinct(code, .keep_all = T)
-#Needs FRED augmentation for euro area countries
+#Prices
+PCPI_IX           Prices, Consumer Price Index, All items, Index                                                     
+PXP_IX           Prices, Export Price Index, All Commodities, Index                                                 
+PMP_IX           Prices, Import Price Index, All Commodities, Index                                                 
+PPPI_IX          Prices, Producer Price Index, All Commodities, Index    
+
+#International
+EREER_IX         Exchange Rates, Real Effective Exchange Rate based on Consumer Price Index, Index
+NX_R_SA_XDC          Exports of Goods and Services, Real, Seasonally Adjusted, Domestic Currency   
+NM_R_SA_XDC          Imports of Goods and Services, Real, Seasonally Adjusted, Domestic Currency                    
+'
+
+#BOP - indicator
+'
+BCA_BP6_XDC      Current Account, Total, Net, National Currency
+'
+#m(params, vars)
+
+#Quarterly
+gdp <- imfr::imf_dataset('ifs', 
+                  indicator = 'NGDP_SA_XDC',
+                  freq = 'Q') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, gdp = value) %>% 
+  as_tibble() %>% 
+  mutate(year = substr(date, 1, 4),
+         quarter = substr(date, nchar(date), nchar(date)),
+         quarter = case_when(quarter == '1' ~ '-01-01',
+                             quarter == '2' ~ '-04-01',
+                             quarter == '3' ~ '-07-01',
+                             quarter == '4' ~ '-10-01'),
+         date = paste(year, quarter, sep = '') %>% as_date()) %>% 
+  select(-year, -quarter)
+
+ca <- imfr::imf_dataset('bop', 
+                         indicator = 'BCA_BP6_XDC',
+                         freq = 'Q') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, ca = value) %>% 
+  as_tibble() %>% 
+  mutate(year = substr(date, 1, 4),
+         quarter = substr(date, nchar(date), nchar(date)),
+         quarter = case_when(quarter == '1' ~ '-01-01',
+                             quarter == '2' ~ '-04-01',
+                             quarter == '3' ~ '-07-01',
+                             quarter == '4' ~ '-10-01'),
+         date = paste(year, quarter, sep = '') %>% as_date()) %>% 
+  select(-year, -quarter)
+
+exp <- imfr::imf_dataset('ifs', 
+                         indicator = 'NX_R_SA_XDC',
+                         freq = 'Q') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, exp = value) %>% 
+  as_tibble() %>% 
+  mutate(year = substr(date, 1, 4),
+         quarter = substr(date, nchar(date), nchar(date)),
+         quarter = case_when(quarter == '1' ~ '-01-01',
+                             quarter == '2' ~ '-04-01',
+                             quarter == '3' ~ '-07-01',
+                             quarter == '4' ~ '-10-01'),
+         date = paste(year, quarter, sep = '') %>% as_date()) %>% 
+  select(-year, -quarter)
+
+imp <- imfr::imf_dataset('ifs', 
+                         indicator = 'NM_R_SA_XDC',
+                         freq = 'Q') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, imp = value) %>% 
+  as_tibble() %>% 
+  mutate(year = substr(date, 1, 4),
+         quarter = substr(date, nchar(date), nchar(date)),
+         quarter = case_when(quarter == '1' ~ '-01-01',
+                             quarter == '2' ~ '-04-01',
+                             quarter == '3' ~ '-07-01',
+                             quarter == '4' ~ '-10-01'),
+         date = paste(year, quarter, sep = '') %>% as_date()) %>% 
+  select(-year, -quarter)
 
 
-e <- haver.metadata(database = 'BIS') %>% 
-  as.tibble() %>% 
-  filter(str_detect(code, START %R% 'b' %R% '\\d\\d\\d' %R% 'xrb' %R% END  )) %>% 
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all(SPACE %R% END)) %>%  
-  filter(frequency == 'M') %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code) %>% 
-  mutate(variable = 'Exchange rate',
-         varnam = 'e') %>% 
-  distinct(code, .keep_all = T)
+ip <- imfr::imf_dataset('ifs', 
+                         indicator = 'AIP_IX',
+                         freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, ip = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+cpi <- imfr::imf_dataset('ifs', 
+                        indicator = 'PCPI_IX',
+                        freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, cpi = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+ppi <- imfr::imf_dataset('ifs', 
+                        indicator = 'PPPI_IX',
+                        freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, ppi = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+pimp <- imfr::imf_dataset('ifs', 
+                        indicator = 'PMP_IX',
+                        freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, pimp = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+pexp <- imfr::imf_dataset('ifs', 
+                        indicator = 'PXP_IX',
+                        freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, pexp = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+exch <- imfr::imf_dataset('ifs', 
+                        indicator = 'EREER_IX',
+                        freq = 'M') %>% 
+  mutate(value = as.numeric(value)) %>% 
+  select(ccode2 = ref_area, date, exch = value) %>% 
+  as_tibble() %>% 
+  mutate(date = paste(date, '-01', sep = '') %>% as_date())
+
+countrycode::codelist %>% 
+  select(ccode2 = iso2c,
+         country = country.name.en)
+
+dfs <- mget(ls())
+dfs <- Filter(function(x) inherits(x, "tbl_df"), dfs)
 
 
-tb <- meta %>% 
-  filter(str_detect(code, START %R% or('x', 's', 'h') %R% '\\d\\d\\d' %R% or('ibd', 'ib') %R% END  )) %>% 
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all(SPACE %R% END)) %>%  
-  filter(frequency == 'M') %>%
-  mutate(is_usa = ifelse(country == 'US', 1, 0),
-         is_ibd = ifelse(str_detect(code, 'ibd'), 1, 0),
-         keep = is_usa + is_ibd) %>% 
-  filter(keep != 0) %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code) %>% 
-  mutate(variable = 'Trade Balance',
-         varnam = 'tb') %>% 
-  distinct(code, .keep_all = T)
+suppressMessages(
+dfs <- lapply(dfs, function(df) {
+  left_join(df, countrycode::codelist %>% 
+              select(ccode2 = iso2c, country = country.name.en)) %>% 
+    select(-ccode2) %>% 
+    drop_na()
+})
+)  
 
 
-gdp <- meta %>% 
-  filter(str_detect(code, START %R% or('x', 's', 'h') %R% '\\d\\d\\d' %R% 'ngpd' %R% END  )) %>% 
-  mutate(country = substr(descriptor, 
-                          start = 1, 
-                          stop = str_locate(descriptor, or(':'))[, 'start']) %>% 
-           str_remove_all(':') %>% 
-           str_remove_all(DOT) %>% 
-           str_remove_all(SPACE %R% END)) %>%  
-  filter(frequency == 'Q') %>% 
-  group_by(country) %>% 
-  mutate(numobsmax = max(numobs)) %>% 
-  filter(numobs == numobsmax) %>%
-  ungroup() %>% 
-  mutate(querycode = paste(database, ':', code, sep = ''),
-         ccode = str_extract(code, '\\d\\d\\d')) %>% 
-  select(querycode, country, descriptor, ccode, code) %>% 
-  mutate(variable = 'GDP',
-         varnam = 'y') %>% 
-  distinct(code, .keep_all = T)
+#Some cleanups in the macro aggregates
+dfs[['tb']] <- dfs[['exp']] %>% 
+  inner_join(dfs[['imp']]) %>% 
+  mutate(tb = exp-imp) %>% 
+  inner_join(dfs[['gdp']]) %>% 
+  mutate(tb = 100*tb/gdp) %>% 
+  select(country, date, tb)
+dfs[['exp']] <- NULL
+dfs[['imp']] <- NULL
 
+dfs[['tot']] <- dfs[['pexp']] %>% 
+  inner_join(dfs[['pimp']]) %>% 
+  mutate(tot = 100*pexp/pimp) %>% 
+  select(country, date, tot)
+dfs[['pexp']] <- NULL
+dfs[['pimp']] <- NULL
 
-meta <- mget(objects()[!(objects() %in% c('meta', 'IMFenvs', 'data', 'gdp', 'i'))], 
-                       envir = globalenv()) 
+dfs[['ca']] <- dfs[['ca']] %>% 
+  inner_join(dfs[['gdp']]) %>% 
+  mutate(ca = 100*ca/gdp) %>% 
+  select(country, date, ca)
 
-data <- NULL
-for(i in 1:length(meta)){
-  #download
-data[[i]] <-haver.data( 
-  codes = mget(objects()[!(objects() %in% c('meta', 'IMFenvs', 'data', 'gdp', 'i'))], 
-                  envir = globalenv())[[i]]$querycode,
-  frequency = 'M',
-  start = as_date('1940-01-01'),
-  end = as_date(Sys.time())
-)
-
-#clean
-data[[i]] <- bind_cols(
-  rownames(data[[i]]),
-  as_tibble(data[[i]])
-) %>% 
-  rename(date = ...1) %>% 
-  mutate(date = paste(substr(date, 1, 4),
-                      case_when(str_detect(date, 'Jan') ~ '01',
-                                str_detect(date, 'Feb') ~ '02',
-                                str_detect(date, 'Mar') ~ '03',
-                                str_detect(date, 'Apr') ~ '04',
-                                str_detect(date, 'May') ~ '05',
-                                str_detect(date, 'Jun') ~ '06',
-                                str_detect(date, 'Jul') ~ '07',
-                                str_detect(date, 'Aug') ~ '08',
-                                str_detect(date, 'Sep') ~ '09',
-                                str_detect(date, 'Oct') ~ '10',
-                                str_detect(date, 'Nov') ~ '11',
-                                str_detect(date, 'Dec') ~ '12'),
-                      '01',
-                      sep = '-') %>% as_date()) %>% 
-  gather(key = code, value = value, -date) %>% 
+dfs[['gdp']] <- dfs[['gdp']] %>% 
+  group_by(country) %>%
+  #mutate(gdp = 100*(gdp/lag(gdp,4)-1)) %>% 
+  mutate(gdp = log(gdp)) %>% 
   drop_na() %>% 
-  left_join(meta[[i]],
-            by = 'code')
+  select(country, date, gdp)
 
-}
-
-#add gdp
-data[[(length(meta)+1)]] <- bind_cols(haver.data(codes = gdp$querycode,
-                                                 frequency = 'Q',
-                                                 start = as_date('1940-01-01'),
-                                                 end = as_date(Sys.time())) %>% rownames(),
-                                      haver.data(codes = gdp$querycode,
-                                                 frequency = 'Q',
-                                                 start = as_date('1940-01-01'),
-                                                 end = as_date(Sys.time())) %>% as_tibble()
-) %>% 
-  rename(date = ...1) %>% 
-  mutate(date = case_when(str_detect(date, 'Q1')  ~ paste(substr(date, 1,4), '-01-01', sep = ''),
-                          str_detect(date, 'Q2')  ~ paste(substr(date, 1,4), '-04-01', sep = ''),
-                          str_detect(date, 'Q3')  ~ paste(substr(date, 1,4), '-07-01', sep = ''),
-                          str_detect(date, 'Q4')  ~ paste(substr(date, 1,4), '-10-01', sep = '')
-  ) %>% 
-    as_date()
-  ) %>% 
-  gather(key = code, value = value, -date) %>% 
+dfs[['cpi']] <- dfs[['cpi']] %>% 
+  group_by(country) %>%
+  #mutate(cpi = 100*(cpi/lag(cpi,12)-1)) %>% 
   drop_na() %>% 
-  left_join(gdp,
-            by = 'code')
+  select(country, date, cpi)
 
-
-#Cleaning up country names / codes
-data <- bind_rows(data) %>% 
-  mutate(country = case_when(ccode == 963 ~ 'Bosnia',
-                             ccode == 936 ~ 'Slovakia',
-                             ccode == 935 ~ 'Chech Republic',
-                             ccode == 924 ~ 'China',
-                             ccode == 576 ~ 'Singapore',
-                             ccode == 542 ~ 'South Korea',
-                             ccode == 532 ~ 'Hong Kong',
-                             ccode == 466 ~ 'UAE',
-                             TRUE ~ country))
-
-data %>% 
-  janitor::tabyl(ccode, country) %>% 
-  mutate(across(-ccode, ~ifelse(.x == 0, 0, 1))) %>% 
-  mutate(ccode = as.numeric(ccode)) %>% 
-  mutate(rowsum = rowSums(.) - ccode) %>% 
-  select(ccode, rowsum) %>% 
-  filter(rowsum != 1) %>% 
-  pull(ccode)
-
-#Check
-data %>% 
-  filter(ccode %in% c('466', '532', '542', '576', '924', '935', '936', '963')) %>% 
-  janitor::tabyl(country, ccode)
-
-#FRED  
-data <- data %>% 
-  bind_rows(  fredr(series_id = 'IR3TIB01SKM156N',
-                    frequency = 'm') %>% 
-                select(date, value) %>% 
-                mutate(country = 'Slovakia',
-                       code = 'IR3TIB01SKM156N',
-                       value = ifelse(is.na(value), lag(value), value)),
-              fredr(series_id = 'LTUIR3TIB01STM',
-                    frequency = 'm') %>% 
-                select(date, value) %>% 
-                mutate(country = 'Lithuania',
-                       code = 'LTUIR3TIB01STM',
-                       value = ifelse(is.na(value), lag(value), value)),
-              fredr(series_id = 'IR3TIB01EEM156N',
-                    frequency = 'm') %>% 
-                select(date, value) %>% 
-                mutate(country = 'Estonia',
-                       code = 'IR3TIB01EEM156N',
-                       value = ifelse(is.na(value), lag(value), value))) %>% 
-  bind_rows(
-    fredr(series_id = 'IR3TIB01ATM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Austria',
-             code = 'IR3TIB01ATM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01DEM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Germany',
-             code = 'IR3TIB01DEM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01FIM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Finland',
-             code = 'IR3TIB01FIM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01NLM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Netherlands',
-             code = 'IR3TIB01NLM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01GRM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Greece',
-             code = 'IR3TIB01GRM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01IEM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Ireland',
-             code = 'IR3TIB01IEM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01LUM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Luxembourg',
-             code = 'IR3TIB01LUM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01PTM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Portugal',
-             code = 'IR3TIB01PTM156N',
-             value = ifelse(is.na(value), lag(value), value)),
-    fredr(series_id = 'IR3TIB01ESM156N',
-          frequency = 'm') %>% 
-      select(date, value) %>% 
-      mutate(country = 'Spain',
-             code = 'IR3TIB01ESM156N',
-             value = ifelse(is.na(value), lag(value), value))) %>% 
-  group_by(country) %>% 
-  mutate(varnam = ifelse(is.na(varnam), 'r', varnam),
-         variable = ifelse(is.na(variable), 'Interest rate', variable),
-         ccode = max(ccode),
-         descriptor = ifelse(is.na(descriptor), '3-month Interbank Rate', descriptor)
-         )
-
-
-  
-
-data_clean <- data %>% 
-  select(date, value, country, varnam) %>% 
-  distinct(date, country, varnam, .keep_all = T) %>% 
-  spread(varnam, value) %>% 
-  mutate(quarter = quarter(date),
-         year = year(date)) %>% 
-  group_by(country, year, quarter) %>% 
-  mutate(y = mean(y, na.rm = T)) %>% 
-  ungroup() %>% 
-  select(-quarter, -year) %>% 
+dfs[['ppi']] <- dfs[['ppi']] %>% 
+  group_by(country) %>%
+  #mutate(ppi = 100*(ppi/lag(ppi,12)-1)) %>% 
   drop_na() %>% 
-  mutate(tb = 100*tb/(1000*y)) %>% 
-  select(-y)
+  select(country, date, ppi)
 
+dfs[['exch']] <- dfs[['exch']] %>% 
+  group_by(country) %>%
+  #mutate(exch = 100*(exch/lag(exch,12)-1)) %>% 
+  drop_na() %>% 
+  select(country, date, exch)
 
+dfs[['ip']] <- dfs[['ip']] %>% 
+  group_by(country) %>%
+  #mutate(ip = 100*(ip/lag(ip,12)-1)) %>% 
+  drop_na() %>% 
+  select(country, date, ip)
 
-metadata <- data %>% 
-  filter(country %in% data_clean$country) %>% 
-  select(country, descriptor, variable, code) %>% 
-  distinct() 
-
-
-
-data_clean %>% saveRDS(file.path('data', 'macrodata.rds'))
-metadata %>% saveRDS(file.path('data', 'macrometa.rds'))
+saveRDS(dfs, file.path('data', 'macrovars.rds'))
+#rm(list = ls())

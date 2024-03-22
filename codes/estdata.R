@@ -4,63 +4,61 @@ library(lubridate)
 library(rebus)
 
 
-#rm(list = ls()[!(ls() == 'IMFenvs')])
+#DB-s
+macrovars <- read_rds(file.path('data', 'macrovars.rds')) 
+shocks <- read_rds(file.path('data', 'gta_shocks.rds')) 
 
-### Dataprep ###
+#Define which vars are on quarterly frequency for LP LHS and RHS generation later in the code
+q <- c('gdp', 'tb', 'ca')
+m <- names(macrovars)[!(names(macrovars) %in% q)]
 
-#Load data and clean up some mess
-macrodata <- read_rds(file.path('data', 'macrodata.rds')) %>% 
-  mutate(country = ifelse(country == 'Chech Repbublic', 'Czech Republic', country))
-shocks <- read_rds(file.path('data', 'gta_shocks.rds')) %>% 
-  mutate(country_imp = ifelse(country_imp == 'Czechia', 'Czech Republic', country_imp),
-         country_aff = ifelse(country_aff == 'Czechia', 'Czech Republic', country_aff),
-         country_imp = ifelse(country_imp == 'Republic of Korea', 'South Korea', country_imp),
-         country_aff = ifelse(country_aff == 'Republic of Korea', 'South Korea', country_aff),
-         country_imp = ifelse(country_imp == 'Chinese Taipei', 'Taiwan', country_imp),
-         country_aff = ifelse(country_aff == 'Chinese Taipei', 'Taiwan', country_aff),
-         country_imp = ifelse(country_imp == 'United Kingdom', 'UK', country_imp),
-         country_aff = ifelse(country_aff == 'United Kingdom', 'UK', country_aff),
-         country_imp = ifelse(country_imp == 'United States of America', 'US', country_imp),
-         country_aff = ifelse(country_aff == 'United States of America', 'US', country_aff))
 
-#Annualized growth and inflation rates
-macrodata <- macrodata %>% 
-  arrange(country, date) %>% 
-  #mutate(ip = log(ip),
-  #       pi = log(pi),
-  #       e = log(e),
-  #       r = log(100+r)) %>% 
-  group_by(country) %>% 
-  #mutate(ip = ip - lag(ip, n = 12),
-  #       pi = pi - lag(pi, n = 12)) %>% 
-  drop_na() %>% 
-  ungroup()
-
-#Set range
-start <- max(
-  min(shocks$date),
-  min(macrodata$date)
-)
-end <- min(
-  max(shocks$date),
-  max(macrodata$date)
+#Generate Controls and Targets for the LP 
+suppressMessages(
+for(i in seq_along(q)){
+  macrovars[[q[i]]] <- macrovars[[q[i]]] %>% 
+    gather(key = var, value = value, -country, -date) %>% 
+    group_by(var, country) %>%  
+    #Remove Country FE
+    mutate(value = value - mean(value)) %>%
+    #Create RHS
+    mutate(map_dfc(seq(4), ~ lag(value, n = .x)) %>%
+             set_names(paste('lag', seq(4),sep = ''))) %>% 
+    #Create LHS
+    mutate(map_dfc(seq(21), ~ lead(value, n = .x)) %>%
+             set_names(paste('lead', seq(21),sep = ''))) %>% 
+    #Remove unnecessary columns  
+    select(-value, -var)
+}
 )
 
-macrodata <- macrodata %>% 
-  filter(date >= start,
-         date <= end)
+suppressMessages(
+for(i in seq_along(m)){
+  macrovars[[m[i]]] <- macrovars[[m[i]]] %>% 
+    gather(key = var, value = value, -country, -date) %>% 
+    group_by(var, country) %>%  
+    #Remove Country FE
+    mutate(value = value - mean(value)) %>%
+    #Create RHS
+    mutate(map_dfc(seq(12), ~ lag(value, n = .x)) %>%
+             set_names(paste('lag', seq(12),sep = ''))) %>% 
+    #Create LHS
+    mutate(map_dfc(seq(61), ~ lead(value, n = .x)) %>%
+             set_names(paste('lead', seq(61),sep = ''))) %>% 
+    select(-value, -var)
+}
+)
 
-shocks <- shocks %>% 
-  filter(date >= start,
-         date <= end)
 
-
-#Country FE - demean variables 
-macrodata <- macrodata %>% 
-  group_by(country) %>% 
-  mutate(across(-date, ~.x - mean(.x))) %>% 
-  ungroup() 
-
+shocks %>% 
+  group_by(date_in, gta_eval) %>% 
+  count() %>% 
+  mutate(n = n*ifelse(gta_eval == 'Red', -1, 1)) %>% 
+  ungroup(gta_eval) %>% 
+  summarize(shock = sum(n)) %>%
+  mutate(map_dfc(seq(12), ~ lag(shock, n = .x)) %>%
+           set_names(paste('shock_l', seq(12),sep = '')))
+  
 
 ### Functions ###
 

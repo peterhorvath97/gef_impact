@@ -1,0 +1,402 @@
+---
+title: "Dynamics of geoeconomic fragmentation"
+author: "Péter Horváth"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  pdf_document:
+    #toc: true
+    #toc_depth: 3
+    includes:
+      in_header: "preamble.tex"
+    #before_body: "before_body.tex"
+    number_sections: true
+abstract: "This is the abstract"
+fontsize: 12pt
+bibliography: "ref.bib"
+csl: "custom-citations.csl"
+link-citations: true
+linkcolor: "blue"
+geometry: "a4paper,outer=25mm,inner=25mm,top=25mm,bottom=25mm"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      results = FALSE)
+
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(stringr)
+library(rebus)
+
+
+#table_captions <- captioner::captioner(prefix="Table")
+#figure_captions <- captioner::captioner(prefix="Figure")
+
+#t.ref <- function(label){
+#  stringr::str_extract(table_captions(label), "[^:]*")
+#}
+
+#f.ref <- function(label){
+#  stringr::str_extract(figure_captions(label), "[^:]*")
+#}
+
+shocks <- read_rds(file.path('..', 'data', 'gta_shocks.rds'))
+macrovars <- read_rds(file.path('..','data', 'macrovars.rds'))
+
+for(i in 1:length(macrovars)){
+  macrovars[[i]] <- macrovars[[i]] %>% 
+    mutate(var = names(macrovars)[i])
+}
+
+macrovars <- bind_rows(macrovars)
+
+mindate <- max(min(shocks$date_in), min(macrovars$date))
+maxdate <- min(max(shocks$date_in), max(macrovars$date))
+
+countries <- macrovars %>% 
+  janitor::tabyl(country, var) %>% 
+  as_tibble() %>% 
+  filter(gdp != 0,
+         cpi != 0) %>% 
+  pull(country)
+
+rm(shocks, macrovars, i)
+
+estout <- read_rds(file.path('..', 'data', 'estout.rds'))
+
+```
+
+\newpage
+
+# Introduction
+
+
+Geoeconomic fragmentation denotes the division or segregation of economic activities, systems, or interests along geopolitical lines. This can take various forms including the establishment of economic blocs, trade disputes, imposition of sanctions, or the development of independent financial structures. Within a geoeconomically fragmented landscape, economic engagements may be more significantly swayed by geopolitical dynamics rather than solely economic considerations, potentially resulting in the emergence of rival economic spheres of influence, trade impediments, and the instrumentalization of economic mechanisms for geopolitical leverage. This concept has gained prominence in discussions and research concerning global trade, investment patterns, and economic relations, particularly in light of recent developments such as the Covid-19 pandemic, or the war in Ukraine and subsequent consequences.
+
+Recent research underscores the significant impact of fragmentation on economic output and inflationary pressures. @bolhuis2023fragmentation emphasize the necessity of granularity in estimating the adverse effects of fragmentation accurately. Additionally, @andriantomanga2022global highlights the substantial influence of global supply chain disruptions on inflation. Monetary policy implications suggest that adjusting policies in response to supply chain disruptions can help alleviate their detrimental effects on inflation.
+
+While there is consensus on the benefits of global value chains, studies warn of welfare losses associated with decoupling. @felbermayr2021decoupling reveal the considerable real income cost of Europe decoupling from China and other non-European trade partners. Similarly, @heiland2020complex and @dixon2021finance demonstrate the severe welfare losses resulting from hypothetical disintegration scenarios. Firm-level analyses by @banh2020global and @karpowicz2020productivity underscore the positive impacts of participating in GVCs on productivity and innovation.
+
+Further research corroborates these findings, highlighting adverse effects of protectionist trade policies such as anti-dumping measures and sanctions. @amiti2019impact, @fajgelbaum2020return, and @bown2007trade provide evidence of the short-term adverse effects of protectionist policies on various countries' economies. @crozet2020friendly reveal unintended consequences of sanctions, contributing to increased country risk in international transactions with Russia.
+
+However, some studies caution against an overly optimistic view of globalization's benefits, particularly for developing countries lacking certain institutional characteristics. @prasad2007financial and @bergin2023catching suggest that globalization may not always spur growth in such contexts. Moreover, the relationship between volatility exposure and globalization remains ambiguous, with conflicting findings regarding the impact of GVCs on volatility. @sudsawasd2006investment, @osnago2015trade, @ebeke2018trade, @wang2021trade, @chen2021tariff, @william2022economic collectively argue that trade policy uncertainty diminishes investment incentives and may lead to various adverse outcomes for firms and economies.
+
+
+# Data
+
+For the purposes of this paper, I rely on two sources of data. Firstly, macroeconomic aggregates for Gross Domestic Product (GDP), Industrial Production (IP), Consumer Prices (CPI), Producer Prices (PPI), Real Effective Exchange Rates (EXCH), Trade Balance (TB), Current Account (CA), and Terms of Trade (TOT) are collected from the International Monetary Fund's International Financial Statistics and Balance of Payments datasets^[TB and TOT are the author's calculations. TB is calculated as the difference of Real Exports of Goods and Services and Real Imports of Goods and Services, TOT is calculated as the ratio of export and import price indices.]. Out of these variables, GDP, TB and CA are available on quarterly, the rest are available on monthly frequencies. In the following estimations, GDP data are entered as logs, CA and TB are entered as fractions of GDP, the rest of the variables - all of which are indices - are entered as levels.
+
+
+The secound source is the [Global Trade Alerts](https://www.globaltradealert.org/) (GTA) database, which monitors international policy measures related to international trade, investment and labor migration. The database tracks both beneficial and harmful measures classified as the measures' relative treatment of domestic versus foreign interest. For the purposes of this paper, this database is used to identify geoeconomic fragmentation shocks, measured as changes in policy affecting international trade. More specifically, I narrow the dataset down to measures that directly influence the flows of exports and imports^[These can take various forms, such as tariffs, quotas, subsidies, or licencing requirements.]. This is done in order to reduce heterogeneity in the target of the measure. Additionally, the database contains three classifications with respect to how the measure interacts with international flows: Red - indicating certain discrimination against foreign interest, Green - indicating policy beneficial for foreign interest, and Amber - likely indicating discrimination against foreign interest. The Amber category is disregarded in order to reduce uncertainty in the identification of geoeconomic fragmentation shocks. Figure \ref{fig:gta} shows the number of these trade policy measures introduced, aggregated annually from 2008 to 2024.   
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+read_rds(file.path('..', 'data', 'gta_shocks.rds')) %>% 
+  mutate(year = year(date_in)) %>% 
+  group_by(year, gta_eval) %>% 
+  count() %>% 
+  ggplot(aes(x = year, y = n, fill = gta_eval)) +
+  geom_col(width = .5) +
+  theme_minimal() +
+  theme(legend.position = 'none')+
+  labs(x = '', y = 'Number of Trade Policy Measures') +
+  scale_fill_manual(breaks = c('Green', 'Red'), values = c('darkgreen', 'red'))+
+  xlim(2008,2024)
+```
+```{=latex}
+\caption{Count of Trade Policy Measures in the Global Trade Alerts database \label{fig:gta}}
+\textit{Notes}: Green bars indicate the number of liberalization, red bars indicate deliberalization measures in each year.
+\end{figure}
+```
+
+Besides the GTA classification, the database contains a wide range of important information, such as the countries imposing and affected by each measure, dates of announcement, implementation and removal, as well as NACE and COICOP codes of sectors and products affected. This allows for studying not only the impact of trade policy measures on countries it affects, but also how it affects countries imposing them, checking for asymmetries between liberalization and deliberalization measures, exploring the difference between permanent and temporary measures, as well as sectoral and product level analysis. Given the macroeconomic data available, the latter two are left for future research. 
+
+In line with the availability of trade policy measures, as well as the availability of GDP and CPI aggregates^[The estimates for the other variables are carried out on a narrower panel.], the data is collected for a panel of `r length(countries)` ^[The list of 59 countries is `r countries`.] from November of 2008 to January of 2024. 
+
+
+# Empirical strategy
+
+As discussed in the data section, the identification of geoeconomic fragmentation shocks lies in the data source.
+For every country-date pair, I count the number of trade policy measures assigning a negative sign to "Green" and a positive to "Red" labelled measures^[From an econometrics perspective, which out of the two types is assigned positive or negative weight should not matter. The choice of sign matters conceptually, as the resulting graphs this way are easier to interpret from a geoeconomic fragmentation perspective.]. Additionally, every country-date pair is assigned 0 if no policy action happened in a given month (quarter). With this setup I am able to track both trade-related shock dates, as well as their severity. I repeat this aggregation process for several specifications, along which I test hypotheses: i) aggregating by affected country, ii) aggregating by imposing country, iii) aggregating positive and negative shocks separately, and iv) aggregating temporary and permanent shocks separately.
+
+To estimate the dynamic impact of geoeconomic fragmentation shocks, I construct panel Local Projections estimates, closely following @jorda2005estimation. In order to keep a streamlined structure of controls - similar to @romer2023presidential in estimating the impact of monetary policy shocks - I use 12 lags of the target and shock variables in a monthly, and 4 lags of each in a quarterly setting. As the estimation is carried out on a panel dataset, I also control for country fixed effects. As such, a mathematical representation of the equations being estimated is as follows:
+\begin{equation}
+  y_{i,t+h} = \beta_{h}x_{i,t} + \alpha_{i,h} + \sum_{t-k}^{K}\gamma_{h}^{(k)}y_{i,t-k} + \sum_{t-k}^{K}\delta_{h}^{(k)}x_{i,t-k} 
+\end{equation}
+
+The left-hand side of the above equation contains future values of the aggregate in question $h = [1,20]$ for quarterly and $h = [1,60]$ for monthly frequencies. On the right-hand side, $\alpha_{i,h}$ are country fixed effects, $y_{i,t-k}$ are lags of the target variable and $x_{i,t-k}$ lags of the shock variable, wher $k = [1,4]$ for quarterly and $k = [1,12]$ for monthly frequencies. $x_{i,t}$ is the shock variable in time $t$, and its corresponding coefficients, $\beta_{h}$, are retrieved from the estimates in order to draw the Local Projections Impulse Responses. In all cases, the models are estimated with @newey1986simple heteroskedasticity and autocorrelation consistent standard errors in order to obtain accurate confidence bands.
+
+
+# Results
+
+This section showcases the results from the four specifications outlined in the Empirical Strategy section. To be concise, I show results here with respect to GDP and Inflation, plots of other variables are relegated to the Annex in order to provide further context. All graphs can be interpreted as the average impact of one trade fragmentation (liberalization) measure on the given variable.
+
+Figure \ref{fig::main} plots the first specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['main']] %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on affected countries \label{fig:main}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::ff} plots the friendly fire specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['friendly_fire']] %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:ff}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::sign} plots the sign asymmetry specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['sign']] %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred')) +
+  scale_fill_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:sign}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::duration} plots the duration asymmetry specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['duration']] %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen')) +
+  scale_fill_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:duration}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+# Conclusion
+
+# References
+
+```{=tex}
+\newpage
+\bgroup
+\renewcommand{\baselinestretch}{1}\normalsize
+```
+::: {#refs}
+:::
+
+::: {#ref}
+:::
+
+```{=tex}
+\egroup
+\newpage
+```
+
+# Annex
+
+Figure \ref{fig::main} plots the first specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['main']] %>% 
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on affected countries \label{fig:main}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::ff} plots the friendly fire specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['friendly_fire']] %>% 
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:ff}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::sign} plots the sign asymmetry specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['sign']] %>% 
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred')) +
+  scale_fill_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:sign}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+Figure \ref{fig::duration} plots the duration asymmetry specification.
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['duration']] %>% 
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen')) +
+  scale_fill_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on imposing countries \label{fig:duration}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
