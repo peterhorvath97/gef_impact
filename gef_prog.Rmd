@@ -1,0 +1,270 @@
+---
+title: "Trade Shocks Intermittent Progress Report"
+author: "Péter Horváth"
+date: "5/7/2024"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      results = FALSE)
+library(tidyverse)
+
+sm <- read_rds('data/estdata.rds')$main$cpi
+sq <- read_rds('data/estdata.rds')$main$gdp
+gta <- read_rds('data/gta_shocks.rds')
+estout <- read_rds('data/estout.rds')
+```
+
+# Concept
+Trade Economics already deals with the concept of Geoeconomic Fragmentation. This is done using General Equilibrium models by calculating a baseline model and a counterfactual where trade barriers (tariffs) are raised significantly and calculating a comparison. Foundations are laid: such a scenario causes welfare loss and increased prices.
+Where can empirics further the literature?
+
+1) Adding dynamics: The GE framework usually compares two steady states, however this does not cover how economies adjust in between them.
+
+2) "Detached from reality": The scenarios set in the GE framework lead to no trade between economies, however in reality this is rarely the case. Using a more realistic approach to capture trade disruptions should lead to more accurate results.
+
+3) Much theory, not much data: The framework uses data for calibrating theoretical models. A fully empirical model should incorporate more information and as such could yield more accurate results.
+
+
+# The data driven approach
+
+1) Gather some macro variables: The primary interest is the impact of trade disruptions on GDP and Inflation, however further variables (CA, TB, TOT, Exchange rates) can be added for further context.
+
+2) Find an appropriate measures that capture trade disruptions: The Global Trade Alerts tracks bilateral trade interventions (positive and negative as well). This can be leveraged to retrieve shocks to international trade flow.
+```{r}
+head(gta, 10) %>% 
+  knitr::kable()
+```
+With the contents of the table, it's possible to investigate the impact of trade interventions, the difference between restrictive and trade boosting measures, and between temporary and permanent shocks. (With potential further additions, however these are overlooked for now.)
+
+3) Combining the trade intervention data and macro variables, estimate LP impulse responses over a 5-year horizon.
+
+
+
+## Previous iteration
+Estimated equation:
+\begin{equation}
+y_{i,t+h} = \alpha^{h}\sum_{k=1}^{K}y_{i,t-k} + \beta^{h}\sum_{k=1}^{K}s_{i,t-k} + \gamma^{h}s_{i,t} + \epsilon_{i,t}
+\end{equation}
+
+This regression is estimated on 
+
+ 1) GDP and CPI (full sample)
+ 
+ 2) CA, TB, TOT and Exchange rate (smaller samples determined by data availability)
+
+Issues: 
+
+ - Aggregation lead to spurious results (other pdf). 
+ 
+ - Comes from strong assumption that the effect of trade restriction is equal, irrespective of who places it on country i. 
+ 
+ - This way the imposing countries' variable cannot be controlled for.
+ 
+ - Cannot control for distance (trade/migration literature on gravity models suggests its importance for bilateral trade/migration)
+ 
+
+```{r, fig.cap = 'Distribution of the shock variable - old'}
+
+
+cowplot::plot_grid(
+sm %>% 
+  group_by(country_aff, date) %>% 
+  summarize(shock = sum(shock)) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = shock)) +
+  geom_histogram() +
+  theme_minimal()+
+  ggtitle('Monthly distribution of shock'),
+
+sq %>% 
+  group_by(country_aff, date) %>% 
+  summarize(shock = sum(shock)) %>% 
+  drop_na() %>%  
+  ggplot(aes(x = shock)) +
+  geom_histogram() +
+  theme_minimal()+
+  ggtitle('Quarterly distribution of shock')
+)
+
+```
+
+\newpage
+
+## Updated version:
+New equation:
+\begin{equation}
+y_{i,t+h} = \alpha_{0}Dist_{i,j} + \alpha_{1}^{h}\sum_{k=1}^{K}y_{i,t-k} + \alpha_{2}^{h}\sum_{k=1}^{K}y_{i,t-k} + \beta^{h}\sum_{k=1}^{K}s_{i,j,t-k} + \gamma^{h}s_{i,j,t} + \epsilon_{i,j,t}
+\end{equation}
+
+
+```{r, fig.cap = 'Distribution of the shock variable - new'}
+
+
+cowplot::plot_grid(
+sm %>% 
+  ggplot(aes(x = shock)) +
+  geom_histogram() +
+  theme_minimal()+
+  ggtitle('Monthly distribution of shock'),
+
+sq %>% 
+  ggplot(aes(x = shock)) +
+  geom_histogram() +
+  theme_minimal()+
+  ggtitle('Quarterly distribution of shock')
+)
+
+```
+
+\newpage
+
+## Results
+Linear estimate suggest a short run decline in demand likely attributed to the domestic economy adjusting to new trade barriers. Over the medium term the economy adjusts with a rebound in demand leading to prolonged price pressure. On the long run, the economy contracts again, which can be attributed to deteriorating exchange rates and increased terms of trade.
+
+```{r, fig.cap = 'LP impulse responses, linear', fig.height = 7}
+cowplot::plot_grid(
+  estout$main %>% 
+  bind_rows() %>% 
+  filter(var == 'gdp' | var == 'cpi') %>% 
+  mutate(var = toupper(var),
+         mean = -mean,
+         lb = -lb,
+         ub = -ub) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', nrow = 2) +
+  theme_minimal() +
+  labs(y = '',
+       x = '',
+       caption = 'Full sample') +
+  theme(legend.title = element_blank(),
+        legend.position = 'bottom'),
+
+estout$main %>% 
+  bind_rows() %>% 
+  filter(var != 'gdp',
+         var != 'cpi') %>% 
+  mutate(var = toupper(var),
+         mean = -mean,
+         lb = -lb,
+         ub = -ub) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  labs(y = '',
+       x = '',
+       caption = 'Limited samples') +
+  theme(legend.title = element_blank(),
+        legend.position = 'bottom'),
+nrow = 2
+)
+```
+
+\newpage
+
+The evidence for asymmetries is negligible, primarily reflecting in a larger CA deficit following positive shocks and more variation in exchange rates following disruptive trade interventions. 
+
+```{r, fig.cap = 'LP impulse responses, sign assymmetry', fig.height = 7}
+cowplot::plot_grid(
+  estout$sign %>% 
+  bind_rows() %>% 
+  filter(var == 'gdp' | var == 'cpi') %>% 
+  mutate(var = toupper(var)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', nrow = 2) +
+  theme_minimal() +
+  labs(y = '',
+       x = '',
+       caption = 'Full sample') +
+  theme(legend.title = element_blank(),
+        legend.position = 'bottom'),
+
+estout$sign %>% 
+  bind_rows() %>% 
+  filter(var != 'gdp',
+         var != 'cpi') %>%   
+  mutate(var = toupper(var)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  labs(y = '',
+       x = '',
+       caption = 'Limited samples') +
+  theme(legend.title = element_blank(),
+        legend.position = 'bottom'),
+nrow = 2
+)
+```
+
+\newpage
+
+Clear difference between permanent and transitory shocks. Permanent ones cause a long lasting upswing in prices. Initially, demand follows, however by the end of the 5-year estimate, output falls significantly. Permanent shocks also have a larger impact on exchange rates, and trade balances. 
+
+```{r, fig.cap = 'LP impulse responses, permanent and transitory shocks', fig.height = 7}
+cowplot::plot_grid(
+  estout$duration %>% 
+    bind_rows() %>% 
+    filter(var == 'gdp' | var == 'cpi') %>% 
+    mutate(var = toupper(var),
+           mean = -mean,
+           lb = -lb,
+           ub = -ub) %>% 
+    ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+    geom_line() +
+    geom_hline(aes(yintercept = 0), color = 'red') +
+    geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+    facet_wrap(~var, scales = 'free', nrow = 2) +
+    theme_minimal() +
+    labs(y = '',
+         x = '',
+         caption = 'Full sample') +
+    theme(legend.title = element_blank(),
+          legend.position = 'bottom'),
+  
+  estout$duration %>% 
+    bind_rows() %>% 
+    filter(var != 'gdp',
+           var != 'cpi') %>% 
+    mutate(var = toupper(var),
+           mean = -mean,
+           lb = -lb,
+           ub = -ub) %>% 
+    ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+    geom_line() +
+    geom_hline(aes(yintercept = 0), color = 'red') +
+    geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+    facet_wrap(~var, scales = 'free') +
+    theme_minimal() +
+    labs(y = '',
+         x = '',
+         caption = 'Limited samples') +
+    theme(legend.title = element_blank(),
+          legend.position = 'bottom'),
+  nrow = 2
+)
+```
+
+\newpage 
+
+What else to check?
+ 
+ - Heterogeneity across countries - this could be done by running the LP-s for individual countries.
+   
+- This could show which countries are the most affected by trade interventions, as well as which countries' measures are the most influential.
+
+- Standard errors: currently non-robust standard errors are used due to computational issues.   

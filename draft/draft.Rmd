@@ -1,0 +1,385 @@
+---
+title: "Dynamics of geoeconomic fragmentation"
+author: "Péter Horváth"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  pdf_document:
+    #toc: true
+    #toc_depth: 3
+    includes:
+      in_header: "preamble.tex"
+    #before_body: "before_body.tex"
+    number_sections: true
+abstract: "This paper investigates the macroeconomic impacts of geoeconomic fragmentation (GEF) shocks identified using the Global Trade Alerts (GTA) database. Impulse responses are estimated across a panel of economies using Local Projections to derive the dynamic impact of GEF shocks. Results indicate a short run demand contraction following these episodes, followed by a medium term upswing in domestic demand, and prolonged inflationary pressure in the long-run. These findings suggest that effective policy should focus on maintaining stable multilateral trade relations, providing short-term support to stabilize key economic sectors, and implementing measures to manage long-term inflationary pressures. Close monitoring of both domestic and foreign market dynamics is essential to tailor policies effectively and mitigate the adverse impacts of GEF shocks."
+fontsize: 12pt
+bibliography: "ref.bib"
+csl: "custom-citations.csl"
+link-citations: true
+linkcolor: "blue"
+geometry: "a4paper,outer=25mm,inner=25mm,top=25mm,bottom=25mm"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      results = FALSE)
+
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(stringr)
+library(rebus)
+
+
+#table_captions <- captioner::captioner(prefix="Table")
+#figure_captions <- captioner::captioner(prefix="Figure")
+
+#t.ref <- function(label){
+#  stringr::str_extract(table_captions(label), "[^:]*")
+#}
+
+#f.ref <- function(label){
+#  stringr::str_extract(figure_captions(label), "[^:]*")
+#}
+
+shocks <- read_rds(file.path('..', 'data', 'gta_shocks.rds'))
+macrovars <- read_rds(file.path('..','data', 'macrovars.rds'))
+
+for(i in 1:length(macrovars)){
+  macrovars[[i]] <- macrovars[[i]] %>% 
+    mutate(var = names(macrovars)[i])
+}
+
+macrovars <- bind_rows(macrovars)
+
+mindate <- max(min(shocks$date_in), min(macrovars$date))
+maxdate <- min(max(shocks$date_in), max(macrovars$date))
+
+countries <- macrovars %>% 
+  janitor::tabyl(country, var) %>% 
+  as_tibble() %>% 
+  filter(gdp != 0,
+         cpi != 0) %>% 
+  pull(country)
+
+rm(shocks, macrovars, i)
+
+estout <- read_rds(file.path('..', 'data', 'estout.rds'))
+
+```
+
+\newpage
+
+
+# Introduction
+
+Geoeconomic fragmentation (GEF) refers to the policy-driven disintegration of global multilateral processes along geopolitical interests. GEF can directly impact economies through the disruption of multilateral trade flows, foreign direct investments, labor mobility, international financial systems, or elevated uncertainty. @aiyar2023geo give warnings of the possibility of a geoeconomically fragmented world following the wake of events such as the Covid-19 pandemic or the war in Ukraine. The possibly adverse consequences of GEF call for policy action to mitigate the effects of a transition from a multilateral to a fragmented world. However, due to its recent nature, there is limited work on quantifying the costs of GEF. Moreover, the bulk of related literature focus its efforts on theoretical models, as opposed to deriving results from empirical work. 
+
+This paper intends to further the literature by switching the focus from theoretical work to empirical models.
+Moving beyond the comparison of two world-state (multilateral and fragmented) scenarios, the data-driven methods should yield a more grounded results in a world where trade is only partially disrupted. Moreover, empirical models can be easily adapted to address dynamic changes over time, as such, a crucial part of this paper is addressing these dynamic changes following episodes of bilateral trade disruptions.
+
+The empirical analysis reveals a distinct pattern of short-term economic contraction following episodes of GEF shocks, predominantly driven by demand-side disruptions due to heightened uncertainty. Over the medium term, demand recovers with a strong upswing. Stable external balances indicate that this upswing is domestic in nature, possibly fueled by re-shoring measures. Over the long-run, results warn of significant inflationary pressures, stemming both from the upswing of domestic demand, as well as external price pressures.
+
+The rest of paper is outlined as follows: The next section reviews related pieces of literature, section three showcases the data with a focus on the @evenett2020global Global Trade Alerts database, section four introduces the empirical methods used in the paper, section five discusses the results and section six concludes.
+
+# Related literaure
+
+Geopolitical tensions have been increasingly impacting global trade patterns, particularly following the Global Financial Crisis, leading to trade growth lagging behind GDP, commonly referred to as the era of "slowballisation".
+@bosone2024geopolitics show that geopolitical tensions - particularly amid the US-China trade tensions from 2018 - have significantly impacted global trade patterns, leading to an increase in geopolitically aligned countries, and a decrease among geopolitical rivals. With a deeper focus on the EU, findings indicate a lack of evidence near-shoring and friend-shoring trends, there is notable de-risking in strategic sectors, particularly following Russia's invasion of Ukraine. 
+
+The impact of GEF can be felt through the disruption of Global Value Chanis (GVCs). @karpowicz2020productivity show that slowdown in productivity in Advanced European Economies can be attributed to a withdrawal from participation in GVCs. @banh2020global show a similar productivity slowdown in Estonia following the Covid-19 pandemic. Underscoring Europe's vulnerability, @heiland2020complex quantify that undoing European integration could lead to welfare losses of up to 21\%, and @felbermayr2021decoupling find significant losses if Europe decoupled from its non-European trading partners. Moving away from Europe alone, @felbermayr2023cutting estimate significant welfare losses from an East versus West trade war scenario, where trade between the two blocs is nearly ceased. @hermida2022does also argue for the benefits of GVCs on long-run growth, particularly, showing the importance for developing economies to secure favourable positions in GVCs.
+
+Among various forms GEF can take, fragmenting global trade processes is arguably the most prominent one.  @crozet2020friendly evaluate the impact of trade sanctions on Russia, revealing substantial losses for both Russia, as well as a "friendly fire" effect on Western countries as a result of imposed sanctions. Conversely, @bown2007trade focus on how US trade affect Japanese exports to third markets, illustrating how these measures deflect and depress Japanese exports. Meanwhile, @fajgelbaum2020return estimate the short-run impact of retaliatory tariff measures on the US. Empirical findings indicate approximately \$51 billion losses after import prices rise, comparatively, a general equilibrium approach implies a much smaller real income change of about \$7 million. @amiti2019impact find a complete passthrough of tariff measures to US markets, as well as a welfare loss of about \$8 million in 2018. @andriantomanga2022global show the the inflationary pressure caused by GVC disruptions in the Sub-Saharan region and how optimal monetary policy might mitigate it.
+
+GEF can disrupt commodity markets, spilling over to the real economy. Shocks to energy prices, particularly oil, causing inflationary pressure and output downturns, as shown by works such as @jones2004oil or @kilian2014oil. Shocks to prices of food commodities can have severe adverse consequences as shown by @van1979macroeconomic or @de2016macroeconomic. @bolhuis2023fragmentation quantify the output losses from trade fragmentation of commodity markets a variety of economies. Their results shed light on the importance of using granular data, as using aggregates can significantly underestimate the impact of fragmentation in commodity markets. 
+
+
+Foreign Direct Investment (FDI) fragmentation can lead to significant adverse consequences as well. @ahn2023geoeconomic find varied outcomes across countries and sectors for FDI fragmentation, with emerging economies being the most vulnerable to adverse consequences. The chapter warns of the rising skepticism towards multilateralism and the implications of friend-shoring measures. However, the picture on financial integration is less clear. @prasad2007financial concludes that while trade liberalization is beneficial for growth, results for financial integration are inconclusive. Meanwhile @bergin2023catching find that capital controls with reserve accumulation polices can promote growth, especially in emerging economies.
+
+
+
+GEF can also indirectly impact economies by causing elevated uncertainty. As a general consensus in empirical literature, economic uncertainty shocks cause a decline in demand, primarily by incentivizing a delay in investments. A number of papers (@sudsawasd2006investment, @osnago2015trade, @ebeke2018trade, @wang2021trade, @chen2021tariff, @william2022economic) find similar results with regards to trade policy uncertainty. Findings indicate that additional to diminishing investment incentives, trade policy uncertainty may lead to various adverse implications for firms and economies, such as reduced exports or lower risk appetite.
+
+
+# Data
+
+For the purposes of this paper, I rely on two sources of data. Firstly, macroeconomic aggregates for Gross Domestic Product (GDP), Consumer Prices (CPI), Real Effective Exchange Rates (EXCH), Trade Balance (TB), Current Account (CA), and Terms of Trade (TOT) are collected from the International Monetary Fund's International Financial Statistics and Balance of Payments datasets^[TB and TOT are the author's calculations. TB is calculated as the difference of Real Exports of Goods and Services and Real Imports of Goods and Services, TOT is calculated as the ratio of export and import price indices.]. Out of these variables, GDP, TB and CA are available on quarterly, the rest are available on monthly frequencies. In the following estimations, GDP data are entered as logs, CA and TB are entered as fractions of GDP, CPI and EXCH - both being indices - are entered as levels.
+
+
+The second source is the [Global Trade Alerts](https://www.globaltradealert.org/) (GTA) database of @evenett2020global, which monitors bilateral international policy measures related to trade, investment and labor migration. The database tracks both beneficial and harmful measures classified as the measures' relative treatment of domestic versus foreign interest. The database contains three classifications with respect to how the measure interacts with international flows: Red - indicating certain discrimination against foreign interest, Green - indicating policy beneficial for foreign interest, and Amber - likely indicating discrimination against foreign interest. Besides the GTA classification, the database contains a wide range of important information, such as the countries imposing and affected by each measure, dates of announcement, implementation and removal, as well as NACE and COICOP codes of sectors and products affected. 
+
+For the purposes of this paper, this database is used to identify episodes of trade disruptions (GEF shocks). I narrow the dataset down to measures that directly influence flows of exports or imports. ^[These can take various forms, such as tariffs, quotas, subsidies, or licencing requirements.]. This is done in order to reduce heterogeneity in the target of the measure. In addition to harmful (Red) measures, beneficial (Green) measures are also included in order to add richness to the model, as well as to check for potential asymmetries with respect to how economies react to harmful and beneficial measures. The Amber category is disregarded in order to reduce uncertainty of the policy measures' impact in the identification of GEF shocks. I consider GEF shocks irrespective of affected sector or product. Figure \ref{fig:gta} shows the number of these trade policy measures introduced, aggregated annually from 2008 to 2024.   
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+read_rds(file.path('..', 'data', 'gta_shocks.rds')) %>% 
+  mutate(year = year(date_in)) %>% 
+  group_by(year, gta_eval) %>% 
+  count() %>% 
+  ggplot(aes(x = year, y = n, fill = gta_eval)) +
+  geom_col(width = .5) +
+  theme_minimal() +
+  theme(legend.position = 'none')+
+  labs(x = '', y = 'Number of Trade Policy Measures') +
+  scale_fill_manual(breaks = c('Green', 'Red'), values = c('darkgreen', 'red'))+
+  xlim(2008,2024)
+```
+```{=latex}
+\caption{Count of Trade Policy Measures in the Global Trade Alerts database \label{fig:gta}}
+\textit{Notes}: Green bars indicate the number of liberalization, red bars indicate deliberalization measures in each year.
+\end{figure}
+```
+
+
+In line with the availability of trade policy measures, as well as the availability of GDP and CPI aggregates^[The estimates for the other variables are carried out on a narrower panel.], the data is collected for a panel of `r length(countries)` ^[The list of 59 countries is `r countries`.] from November of 2008 to January of 2024. 
+
+# Empirical strategy
+
+As discussed in the data section, the identification of geoeconomic fragmentation shocks lies in the data source.
+For every country pair for a given month (quarter), I count the number of trade policy measures, assigning a negative sign to "Green" and a positive to "Red" labelled measures^[From an econometrics perspective, which out of the two types is assigned positive or negative weight should not matter. The choice of sign matters conceptually, as the resulting graphs this way are easier to interpret from a geoeconomic fragmentation perspective.] In cases when no trade policy measures occurred between two countries in a given month (quarter), a value of 0 is assigned to the GEF shock variable.
+
+To estimate the dynamic impact of GEF shocks, I rely on the methods of @jorda2005estimation and construct panel Local Projections (LP) estimates. I run the regressions on demeaned variables in order to control for country fixed effects. For controls, I use 12-12 (4-4) lags of both the affected and imposing countries' aggregate, 12 (4) lags of the GEF shock variable, as well as the distance between the two countries - similar to gravity models. As such, a mathematical representation of the equations being estimated is as follows:
+
+\begin{equation}
+y_{i,t+h} = \alpha_{0}dist_{i,j} + \alpha_{1}^{h}\sum_{k=1}^{K}y_{i,t-k} + \alpha_{2}^{h}\sum_{k=1}^{K}y_{j,t-k} + \gamma^{h}\sum_{k=1}^{K}shock_{i,j,t-k} + \beta^{h}shock_{i,j,t} + \epsilon_{i,j,t}
+\end{equation}
+
+where $\alpha_{1}^{h}\sum_{k=1}^{K}y_{i,t-k}$ represents the controls for the domestic economy, $\alpha_{2}^{h}\sum_{k=1}^{K}y_{j,t-k}$ represents the controls for the foreign economy, and the $\beta^{h}$ coefficients are retrieved to draw the LP impulse responses. In all cases, the models are estimated with @newey1986simple heteroskedasticity and autocorrelation consistent standard errors in order to obtain accurate confidence bands. For variables available on monthly frequency, the LP impulse responses are estimated over a 60-month horizon, on quarterly frequency, the impulse response horizon is set to 20 quarters.
+
+This model specification is later changed in order to check for asymmetries in positive and negative sign GEF shocks (i.e.: between trade fragmentation and trade liberalization measures), as well as  temporary and permanent shocks.
+
+# Results
+
+
+Figure \ref{fig::main} illustrates the dynamic impact of GEF shocks on GDP and inflation over a five-year period. Initially, both show a decline lasting approximately one year, indicating a short run demand contraction. While trade shocks causing supply chain disruptions might lead us to believe that we should see a contraction on the supply side, this is in line with GEF impacting economies through elevated uncertainty leading to a demand-side effect. Additionally, Figure{fig::main_other} shows no significant changes in CA and TB with a short run deterioration in exchange rates and TOT, which can farther fuel the contracting demand pattern. 
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['main']] %>% 
+  bind_rows() %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on the domestic economy \label{fig::main}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+This is followed by a period of recovery where both indicators show an upswing. Specifically, GDP recovers over the next 2.5 years, while inflation continues to rise for about three years. The lack of significant impact on external balances could be the explanation behind GDP adjusting slightly faster, while more elastic prices of internationally traded goods and services could be the explanation for the prolonged inflationary pressure. Following the recovery domestic demand contracts again, however this contraction is very close to zero both in terms of output and inflation.
+
+Achieving these results was done combing contractive and and expansive trade shocks into a single variable, additionally, with the GTA database, it is also possible to distinguish between long lasting and temporary measures. This calls for further checks with respect to these potential asymmetries. The results of checking for sign asymmetries in the shock variable can be seen in Figure \ref{fig::sign} for the domestic economy, and Figure  \ref{fig::sign_other} for external variables, and the results of checking for duration asymmetries can be seen in Figure \ref{fig::duration} for the domestic and Figure \ref{fig::duration_other} for external variables.
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['sign']] %>% 
+  bind_rows() %>% 
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred')) +
+  scale_fill_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on the domestic economy \label{fig::sign}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+In line with results from the previous estimates, the initial impact of regressing positive and negative GEF shocks separately is not surprising. Following an episode of trade fragmentation, the shock causes demand side disruptions, while liberalizing trade promotes demand-pull growth. Overall, the responses of prices show little to no significant asymmetries. However, economic activity responds differently to positive and negative shocks. Following negative shocks, output rises, which could be a sign of policy-driven re-shoring efforts.
+
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['duration']] %>% 
+  bind_rows() %>%
+  filter(var %in% c('gdp', 'cpi')) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free', ncol = 1) +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen')) +
+  scale_fill_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on the domestic economy \label{fig::duration}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+Overall, the empirical estimates strongly suggest a pattern of short run contraction, likely driven by episodes of GEF driving demand by causing uncertainty. Long run implications are less clear, and strongly depend on how the shock is specified. However, all estimates suggest a strong and prolonged price pressure following the shock on the long term, as well as a strong upswing in demand on the medium term. The latter phenomenon is likely driven by domestic demand possibly coming from re-shoring measures, as external balances fluctuate around zero. As such, the price pressure can be attributed in part to this upswing in domestic demand, as well as deteriorating terms of trade. 
+
+# Conclusion
+
+This paper provides an empirical analysis of the impacts of GEF shocks on a wide range of economies. The findings highlight the significant short-term contractions, particularly caused by demand disruptions. The recovery from these shocks varies depending on the nature and duration of the trade measures involved, with permanent shocks having more enduring effects compared to temporary ones.
+
+
+Policy interventions aimed at mitigating the adverse effects of GEF should prioritize maintaining stable trade relations through predictable trade agreements and multilateral negotiations to prevent trade disruptions. Additionally, short-term support is crucial to stabilize key sectors of the economy in the initial year following a trade policy shock. Finally, close monitoring of domestic demand and foreign markets is essential to implement timely policies that mitigate long-term price pressures.
+
+
+# Next steps
+
+ - Conceptually, re-shoring being the driving factor of medium-term demand upswings makes sense, but not sure how to check the validity of this 
+ - Heterogeneity across countries - country-by-country regressions run separately by countries suffering the shocks
+ - "Strength" of imposer countries - country-by-country regressions run separately by countries imposing the shocks
+ - Not sure yet how to concisely summarize once these are done
+
+# References
+
+```{=tex}
+\newpage
+\bgroup
+\renewcommand{\baselinestretch}{1}\normalsize
+```
+::: {#refs}
+:::
+
+::: {#ref}
+:::
+
+```{=tex}
+\egroup
+\newpage
+```
+
+# Appendix
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['main']] %>% 
+  bind_rows() %>%
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = 'shock', values = 'darkblue') +
+  scale_fill_manual(breaks = 'shock', values = 'darkblue')
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on external variables \label{fig::main_other}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['sign']] %>% 
+  bind_rows() %>%
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         #across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred')) +
+  scale_fill_manual(breaks = c('shock_pos','shock_neg') , values = c('darkblue', 'darkred'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on external variables \label{fig::sign_other}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
+Similarly to the estimates without introducing asymmetries, the impact of temporary and permanent shocks initially shows a demand contraction, in line with trade disruptions driving the demand through causing uncertainty. However, temporary shocks dissipate within the 5 year window , even leading to more favorable supply conditions than before. Permanent shocks, however have a longer lasting consequence, primarily by significantly driving up prices. This can be caused on one hand by TOT deteriorating persistently on the long-run, as well as domestic measures driving up prices. As seen in the responses, GDP increases shortly after an introduction of permanent trade measures, which could be caused by re-shoring policy efforts. Around four years later, the excess demand caused by this cools off, however, with prices of international goods remaining elevated due to trade policy measures in place, the economies face a severe supply side contraction.
+
+```{=latex}
+\begin{figure}[!htbp]
+```
+```{r}
+estout[['duration']] %>% 
+  bind_rows() %>%
+  filter(!(var %in% c('gdp', 'cpi'))) %>% 
+  mutate(var = toupper(var),
+         across(c(mean, lb, ub), ~-.x)
+         ) %>% 
+  ggplot(aes(x = t, y = mean, color = shock, fill = shock)) +
+  geom_line() +
+  geom_hline(aes(yintercept = 0), color = 'red') +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .2, linetype = 0) +
+  facet_wrap(~var, scales = 'free') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank()) +
+  labs(x = '', y = 'Percent deviation') +
+  scale_color_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen')) +
+  scale_fill_manual(breaks = c('shock_perm','shock_trans') , values = c('darkblue', 'darkgreen'))
+
+
+```
+```{=latex}
+\caption{Impact of trade shocks on external variables \label{fig::duration_other}}
+\textit{Notes}: The confidence bands represent one standard deviation.
+\end{figure}
+```
+
